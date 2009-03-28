@@ -18,7 +18,7 @@ WebServer webserver(PREFIX, 80);
 
 void helloCmd(WebServer &server, WebServer::ConnectionType type)
 {
-  httpSuccess();
+  server.httpSuccess();
   if (type != WebServer::HEAD)
   {
     server.print("<h1>Hello, World!</h1>");
