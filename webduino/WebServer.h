@@ -40,6 +40,7 @@ public:
   void processConnection();
 
   void setDefaultCommand(Command *cmd);
+  void setFailureCommand(Command *cmd);
   void addCommand(const char *verb, Command *cmd);
 
   void printCRLF();
@@ -56,7 +57,7 @@ public:
   void httpSuccess(bool forceRefresh = false, const char *contentType = "text/html");
   void httpSeeOther(const char *otherURL);
 
-  static void failCmd(WebServer &server, ConnectionType type);
+  static void defaultFailCmd(WebServer &server, ConnectionType type);
 
 private:
   Client *m_client;
@@ -65,6 +66,7 @@ private:
   char m_pushback[32];
   char m_pushbackDepth;
 
+  Command *m_failureCmd;
   Command *m_defaultCmd;
   struct CommandMap
   {
@@ -75,13 +77,18 @@ private:
 
   void reset();
   void getRequest(WebServer::ConnectionType &type, char *request, int length);
+  bool dispatchCommand(ConnectionType requestType, const char *verb);
   void skipHeaders();
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
-  Server(port), m_client(0),
-  m_urlPrefix(urlPrefix), m_pushbackDepth(0),
-  m_cmdCount(0), m_defaultCmd(&failCmd)
+  Server(port), 
+  m_client(0),
+  m_urlPrefix(urlPrefix), 
+  m_pushbackDepth(0),
+  m_cmdCount(0), 
+  m_failureCmd(&defaultFailCmd), 
+  m_defaultCmd(&defaultFailCmd)
 {
 }
 
@@ -93,6 +100,11 @@ void WebServer::begin()
 void WebServer::setDefaultCommand(Command *cmd)
 {
   m_defaultCmd = cmd;
+}
+
+void WebServer::setFailureCommand(Command *cmd)
+{
+  m_failureCmd = cmd;
 }
 
 void WebServer::addCommand(const char *verb, Command *cmd)
@@ -117,6 +129,37 @@ void WebServer::printCRLF()
   print('\n', BYTE);
 }
 
+bool WebServer::dispatchCommand(ConnectionType requestType, const char *verb)
+{
+  if (verb[0] == 0)
+  {
+    m_defaultCmd(*this, requestType);
+    return true;
+  }
+  
+  if (verb[0] == '/')
+  {
+    if (verb[1] == 0)
+    {
+      m_defaultCmd(*this, requestType);
+      return true;
+    }
+    else
+    {
+      char i;
+      for (i = 0; i < m_cmdCount; ++i)
+      {
+        if (strcmp(verb + 1, m_commands[i].verb) == 0)
+        {
+          m_commands[i].cmd(*this, requestType);
+          return true;
+        }  
+      }     
+    }
+  }    
+  return false;
+}
+
 void WebServer::processConnection()
 {
   Client client = available();
@@ -128,14 +171,12 @@ void WebServer::processConnection()
     ConnectionType requestType = INVALID; 
     getRequest(requestType, request, 32);
     
-    if (requestType != INVALID &&
-        strncmp(request, m_urlPrefix, strlen(m_urlPrefix)) == 0)
-    {   
-      m_defaultCmd(*this, requestType);
-    }
-    else
+    int urlPrefixLen = strlen(m_urlPrefix);
+    if (requestType == INVALID ||
+        strncmp(request, m_urlPrefix, urlPrefixLen) != 0 ||
+        !dispatchCommand(requestType, request + urlPrefixLen))
     {
-       failCmd(*this, requestType);
+       m_failureCmd(*this, requestType);
     }
 
     client.stop();
@@ -147,14 +188,14 @@ void WebServer::httpFail()
 {
   P(failMsg) = 
     "HTTP/1.0 400 Bad Request" CRLF
-    "Content-Type: text/plain" CRLF
+    "Content-Type: text/html" CRLF
     CRLF
-    "EPIC FAIL";
+    "<h1>EPIC FAIL</h1>";
 
   printP(failMsg);
 }
 
-void WebServer::failCmd(WebServer &server, WebServer::ConnectionType type)
+void WebServer::defaultFailCmd(WebServer &server, WebServer::ConnectionType type)
 {
   server.httpFail();
 }
