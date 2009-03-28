@@ -23,6 +23,7 @@ THE SOFTWARE.
 
 #include <Ethernet.h>
 #include <string.h>
+#include <stdlib.h>
 
 // utility macros
 #define CRLF "\r\n"
@@ -49,9 +50,18 @@ public:
   void radioButton(const char *name, const char *val, const char *label, bool selected);
   void checkBox(const char *name, const char *val, const char *label, bool selected);
 
+  // returns next character or -1 if we're at end-of-stream
   int read();
+
+  // put a character that's been read back into the input pool
   void push(char ch);
+  
+  // returns true if the string is next in the stream.  Doesn't consume any character if false,
+  // so can be used to try out different expected values.
   bool expect(const char *expectedStr);
+  
+  // returns true if we're not at end-of-stream
+  bool readURLParam(char *name, int nameLen, char *value, int valueLen);
 
   void httpFail();
   void httpSuccess(bool forceRefresh = false, const char *contentType = "text/html");
@@ -170,6 +180,7 @@ void WebServer::processConnection()
     request[0] = 0;
     ConnectionType requestType = INVALID; 
     getRequest(requestType, request, 32);
+    skipHeaders();
     
     int urlPrefixLen = strlen(m_urlPrefix);
     if (requestType == INVALID ||
@@ -273,6 +284,58 @@ bool WebServer::expect(const char *str)
   return true;
 }
 
+bool WebServer::readURLParam(char *name, int nameLen, char *value, int valueLen)
+{
+  // assume name is at current place in stream
+  int ch;
+
+  // clear out name and value so they'll be NUL terminated
+  memset(name, 0, nameLen);
+  memset(value, 0, valueLen);
+  
+  while ((ch = read()) != -1)
+  {
+    if (ch == '+')
+    {
+      ch = ' ';
+    }
+    else if (ch == '=')
+    {
+      /* that's end of name, so switch to storing in value */
+      nameLen = 0;
+      continue;
+    }
+    else if (ch == '&')
+    {
+      /* that's end of pair, go away */
+      return true;
+    }
+    else if (ch == '%')
+    {
+      /* handle URL encoded characters by converting back to original form */
+      int ch1 = read();
+      int ch2 = read();
+      if (ch1 == -1 || ch2 == -1)
+         return false;
+      char hex[3] = { ch1, ch2, 0 };
+      ch = strtoul(hex, NULL, 16);
+    }
+
+    // check against 1 so we don't overwrite the final NUL
+    if (nameLen > 1)
+    {
+      *name++ = ch;
+      --nameLen;
+    }
+    else if (valueLen > 1)
+    {
+      *value++ = ch;
+      --valueLen;
+    }
+  }
+  return (ch != -1);
+}
+  
 void WebServer::getRequest(WebServer::ConnectionType &type, char *request, int length)
 {
   --length; // save room for NUL
@@ -302,7 +365,7 @@ void WebServer::getRequest(WebServer::ConnectionType &type, char *request, int l
     {
       *request = ch;
       ++request;
-      --length;  
+      --length;
     }
   }
   // NUL terminate
@@ -326,6 +389,11 @@ void WebServer::skipHeaders()
     { 
       if (state == 1) state = 2; 
       else if (state == 3) return; 
+    }
+    else
+    {
+      // any other character resets the search state
+      state = 0;
     }
   }
 }

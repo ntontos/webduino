@@ -29,11 +29,9 @@ void jsonCmd(WebServer &server, WebServer::ConnectionType type)
     
   int i;    
   server.print("{ ");
-  for (i = 0; i <= 13; ++i)
+  for (i = 0; i <= 9; ++i)
   {
     // ignore the pins we use to talk to the Ethernet chip
-    if (i >= 10 && i <= 12)
-      continue;
     int val = digitalRead(i);
     server.print("\"d");
     server.print(i);
@@ -79,11 +77,9 @@ void outputPins(WebServer &server, WebServer::ConnectionType type, bool addContr
   
   server.print("<h1>Digital Pins</h1><p>");
 
-  for (i = 0; i <= 13; ++i)
+  for (i = 0; i <= 9; ++i)
   {
     // ignore the pins we use to talk to the Ethernet chip
-    if (i >= 10 && i <= 12)
-      continue;
     int val = digitalRead(i);
     server.print("Digital ");
     server.print(i);
@@ -125,8 +121,22 @@ void outputPins(WebServer &server, WebServer::ConnectionType type, bool addContr
 void formCmd(WebServer &server, WebServer::ConnectionType type)
 {
   if (type == WebServer::POST)
-    // fixme
+  {
+    bool repeat;
+    char name[16], value[16];
+    do
+    {
+      repeat = server.readURLParam(name, 16, value, 16);
+      if (name[0] == 'd')
+      {
+        int pin = strtoul(name + 1, NULL, 10);
+        int val = strtoul(value, NULL, 10);
+        digitalWrite(pin, val);
+      }
+    } while (repeat);
+    
     server.httpSeeOther(PREFIX "/form");
+  }
   else
     outputPins(server, type, true);
 }
@@ -138,9 +148,10 @@ void defaultCmd(WebServer &server, WebServer::ConnectionType type)
 
 void setup()
 {
-  // set pins 0-9 for digital input
+  // set pins 0-8 for digital input
   for (int i = 0; i <= 9; ++i)
     pinMode(i, INPUT);
+  pinMode(9, OUTPUT);
 
   Ethernet.begin(mac, ip);
   webserver.begin();
