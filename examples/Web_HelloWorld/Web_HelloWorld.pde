@@ -35,7 +35,7 @@ void helloCmd(WebServer &server, WebServer::ConnectionType type)
     /* this defines some HTML text in read-only memory aka PROGMEM.
      * This is needed to avoid having the string copied to our limited
      * amount of RAM. */
-    P(helloMsg, "<h1>Hello, World!</h1>");
+    P(helloMsg) = "<h1>Hello, World!</h1>";
 
     /* this is a special form of print that outputs from PROGMEM */
     server.printP(helloMsg);
