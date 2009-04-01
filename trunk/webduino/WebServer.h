@@ -21,34 +21,65 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-#include <Ethernet.h>
 #include <string.h>
 #include <stdlib.h>
 
-// utility macros
+#define WEBDUINO_VERSION 1001
+#define WEBDUINO_VERSION_STRING "1.1"
+
+// standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
+
+// declare a static string
 #define P(name)   static const prog_uchar name[] PROGMEM
+
+// returns the number of elements in the array
 #define SIZE(array) (sizeof(array) / sizeof(*array))
 
 class WebServer: public Server
 {
 public:
+  // passed to a command to indicate what kind of request was received
   enum ConnectionType { INVALID, GET, HEAD, POST };
+
+  // any commands registered with the web server have to follow
+  // this prototype
   typedef void Command(WebServer &server, ConnectionType type);
 
+  // constructor for webserver object
   WebServer(const char *urlPrefix = "/", int port = 80);
+
+  // start listening for connections
   void begin();
+
+  // check for an incoming connection, and if it exists, process it
+  // by reading its request and calling the appropriate command
+  // handler.
   void processConnection();
 
+  // set command that's run when you access the root of the server
   void setDefaultCommand(Command *cmd);
+
+  // set command run for undefined pages
   void setFailureCommand(Command *cmd);
+
+  // add a new command to be run at the URL specified by verb
   void addCommand(const char *verb, Command *cmd);
 
+  // utility function to output CRLF pair
   void printCRLF();
+  
+  // output a string stored in program memory, usually one defined
+  // with the P macro
   void printP(const prog_uchar *str);
 
-  void radioButton(const char *name, const char *val, const char *label, bool selected);
-  void checkBox(const char *name, const char *val, const char *label, bool selected);
+  // output HTML for a radio button
+  void radioButton(const char *name, const char *val, 
+                   const char *label, bool selected);
+
+  // output HTML for a checkbox
+  void checkBox(const char *name, const char *val, 
+                const char *label, bool selected);
 
   // returns next character or -1 if we're at end-of-stream
   int read();
@@ -56,18 +87,27 @@ public:
   // put a character that's been read back into the input pool
   void push(char ch);
   
-  // returns true if the string is next in the stream.  Doesn't consume any character if false,
-  // so can be used to try out different expected values.
+  // returns true if the string is next in the stream.  Doesn't
+  // consume any character if false, so can be used to try out
+  // different expected values.
   bool expect(const char *expectedStr);
   
   // returns true if we're not at end-of-stream
   bool readURLParam(char *name, int nameLen, char *value, int valueLen);
 
+  // output headers and a message indicating a server error
   void httpFail();
-  void httpSuccess(bool forceRefresh = false, const char *contentType = "text/html");
-  void httpSeeOther(const char *otherURL);
 
-  static void defaultFailCmd(WebServer &server, ConnectionType type);
+  // output standard headers indicating "200 Success".  You can change the
+  // type of the data you're outputting or also add extra headers like
+  // "Refresh: 1".  Extra headers should each be terminated with CRLF.
+  void httpSuccess(const char *contentType = "text/html", 
+                   const char *extraHeaders = NULL);
+
+  // used with POST to output a redirect to another URL.  This is
+  // preferable to outputting HTML from a post because you can then
+  // refresh the page without getting a "resubmit form" dialog.
+  void httpSeeOther(const char *otherURL);
 
 private:
   Client *m_client;
@@ -89,6 +129,11 @@ private:
   void getRequest(WebServer::ConnectionType &type, char *request, int length);
   bool dispatchCommand(ConnectionType requestType, const char *verb);
   void skipHeaders();
+  void outputCheckboxOrRadio(const char *element, const char *name, 
+                             const char *val, const char *label, 
+                             bool selected);
+
+  static void defaultFailCmd(WebServer &server, ConnectionType type);
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
@@ -206,7 +251,8 @@ void WebServer::httpFail()
   printP(failMsg);
 }
 
-void WebServer::defaultFailCmd(WebServer &server, WebServer::ConnectionType type)
+void WebServer::defaultFailCmd(WebServer &server, 
+                               WebServer::ConnectionType type)
 {
   server.httpFail();
 }
@@ -284,7 +330,8 @@ bool WebServer::expect(const char *str)
   return true;
 }
 
-bool WebServer::readURLParam(char *name, int nameLen, char *value, int valueLen)
+bool WebServer::readURLParam(char *name, int nameLen, 
+                             char *value, int valueLen)
 {
   // assume name is at current place in stream
   int ch;
@@ -336,7 +383,8 @@ bool WebServer::readURLParam(char *name, int nameLen, char *value, int valueLen)
   return (ch != -1);
 }
   
-void WebServer::getRequest(WebServer::ConnectionType &type, char *request, int length)
+void WebServer::getRequest(WebServer::ConnectionType &type, 
+                           char *request, int length)
 {
   --length; // save room for NUL
   
@@ -374,8 +422,8 @@ void WebServer::getRequest(WebServer::ConnectionType &type, char *request, int l
 
 void WebServer::skipHeaders()
 {
-  // look for the CRLFCRLF at the end of the headers, read characters until then
-  // store the GET/POST line of the request
+  /* look for the double CRLF at the end of the headers, read
+   * characters until then store the GET/POST line of the request */
   char state = 0;
   int ch; 
   while ((ch = read()) != -1)
@@ -398,30 +446,40 @@ void WebServer::skipHeaders()
   }
 }
 
-void WebServer::checkBox(const char *name, const char *val, const char *label, bool selected)
+void WebServer::outputCheckboxOrRadio(const char *element, const char *name, 
+                                      const char *val, const char *label, 
+                                      bool selected)
 {
-  print("<label><input type='checkbox' name='");
+  P(cbPart1a) = "<label><input type='";
+  P(cbPart1b) = "' name='";
+  P(cbPart2) = "' value='";
+  P(cbPart3) = "' ";
+  P(cbChecked) = "checked ";
+  P(cbPart4) = "/> ";
+  P(cbPart5) = "</label>";
+
+  printP(cbPart1a);
+  print(element);
+  printP(cbPart1b);
   print(name);
-  print("' value='");
+  printP(cbPart2);
   print(val);
-  print("' ");
+  printP(cbPart3);
   if (selected)
-    print("checked ");
-  print("/> ");
+    print(cbChecked);
+  printP(cbPart4);
   print(label);
-  print("</label>");
+  printP(cbPart5);
 }
 
-void WebServer::radioButton(const char *name, const char *val, const char *label, bool selected)
+void WebServer::checkBox(const char *name, const char *val, 
+                         const char *label, bool selected)
 {
-  print("<label><input type='radio' name='");
-  print(name);
-  print("' value='");
-  print(val);
-  print("' ");
-  if (selected)
-    print("checked ");
-  print("/> ");
-  print(label);
-  print("</label>");
+  outputCheckboxOrRadio("checkbox", name, val, label, selected);
+}
+
+void WebServer::radioButton(const char *name, const char *val, 
+                            const char *label, bool selected)
+{
+  outputCheckboxOrRadio("radio", name, val, label, selected);
 }
