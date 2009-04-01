@@ -3,6 +3,13 @@
 #include "Ethernet.h"
 #include "WebServer.h"
 
+// no-cost stream operator as described at 
+// http://sundial.org/arduino/?page_id=119
+template<class T>
+inline Print &operator <<(Print &obj, T arg)
+{ obj.print(arg); return obj; }
+
+
 // CHANGE THIS TO YOUR OWN UNIQUE VALUE
 static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
 
@@ -30,30 +37,23 @@ void jsonCmd(WebServer &server, WebServer::ConnectionType type)
     return;
     
   int i;    
-  server.print("{ ");
+  server << "{ ";
   for (i = 0; i <= 9; ++i)
   {
     // ignore the pins we use to talk to the Ethernet chip
     int val = digitalRead(i);
-    server.print("\"d");
-    server.print(i);
-    server.print("\": ");
-    server.print(val);
-    server.print(", ");
+    server << "\"d" << i << "\": " << val << ", ";
   }
         
   for (i = 0; i <= 5; ++i)
   {
     int val = analogRead(i);
-    server.print("\"a");
-    server.print(i);
-    server.print("\": ");
-    server.print(val);
+    server << "\"a" << i << "\": " << val;
     if (i != 5)
-      server.print(", ");
+      server << ", ";
   }
   
-  server.print(" }");
+  server << " }";
 }
 
 void outputPins(WebServer &server, WebServer::ConnectionType type, bool addControls = false)
@@ -75,49 +75,43 @@ void outputPins(WebServer &server, WebServer::ConnectionType type, bool addContr
   server.printP(htmlHead);
 
   if (addControls)
-    server.print("<form action='" PREFIX "/form' method='post'>");
+    server << "<form action='" PREFIX "/form' method='post'>";
   
-  server.print("<h1>Digital Pins</h1><p>");
+  server << "<h1>Digital Pins</h1><p>";
 
   for (i = 0; i <= 9; ++i)
   {
     // ignore the pins we use to talk to the Ethernet chip
     int val = digitalRead(i);
-    server.print("Digital ");
-    server.print(i);
-    server.print(": ");
+    server << "Digital " << i << ": ";
     if (addControls)
     {
       char pinName[4];
       pinName[0] = 'd';
       itoa(i, pinName + 1, 10);
       server.radioButton(pinName, "1", "On", val);
-      server.print(" ");
+      server << " ";
       server.radioButton(pinName, "0", "Off", !val);
     }
     else
-      server.print(val ? "HIGH" : "LOW");
+      server << (val ? "HIGH" : "LOW");
 
-    server.print("<br/>");
+    server << "<br/>";
   }
         
-  server.print("</p><h1>Analog Pins</h1><p>");
+  server << "</p><h1>Analog Pins</h1><p>";
   for (i = 0; i <= 5; ++i)
   {
     int val = analogRead(i);
-    server.print("Analog ");
-    server.print(i);
-    server.print(": ");
-    server.print(val);
-    server.print("<br/>");
+    server << "Analog " << i << ": " << val << "<br/>";
   }
       
-  server.print("</p>");
+  server << "</p>";
   
   if (addControls)
-    server.print("<input type='submit' value='Submit'/></form>");
+    server << "<input type='submit' value='Submit'/></form>";
   
-  server.print("</body></html>");
+  server << "</body></html>";
 }
 
 void formCmd(WebServer &server, WebServer::ConnectionType type)
