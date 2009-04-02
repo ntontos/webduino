@@ -101,7 +101,7 @@ public:
   // output standard headers indicating "200 Success".  You can change the
   // type of the data you're outputting or also add extra headers like
   // "Refresh: 1".  Extra headers should each be terminated with CRLF.
-  void httpSuccess(const char *contentType = "text/html", 
+  void httpSuccess(const char *contentType = "text/html; charset=utf-8", 
                    const char *extraHeaders = NULL);
 
   // used with POST to output a redirect to another URL.  This is
@@ -257,24 +257,18 @@ void WebServer::defaultFailCmd(WebServer &server,
   server.httpFail();
 }
 
-void WebServer::httpSuccess(bool forceRefresh, const char *contentType)
+void WebServer::httpSuccess(const char *contentType, 
+                            const char *extraHeaders)
 {
   P(successMsg1) =
     "HTTP/1.0 200 OK" CRLF
     "Content-Type: ";
 
-  P(successMsg2) =
-    "; charset=UTF-8" CRLF
-    "Pragma: no-cache" CRLF;
-
-  P(successMsg3) =
-    "Refresh: 1" CRLF;
-
   printP(successMsg1);
   print(contentType);
-  printP(successMsg2);
-  if (forceRefresh)
-    printP(successMsg3);
+  printCRLF();
+  if (extraHeaders)
+    print(extraHeaders);
   printCRLF();
 }
 
@@ -466,7 +460,7 @@ void WebServer::outputCheckboxOrRadio(const char *element, const char *name,
   print(val);
   printP(cbPart3);
   if (selected)
-    print(cbChecked);
+    printP(cbChecked);
   printP(cbPart4);
   print(label);
   printP(cbPart5);
