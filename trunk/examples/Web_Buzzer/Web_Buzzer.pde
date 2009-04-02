@@ -19,7 +19,7 @@ WebServer webserver(PREFIX, 80);
 #define BUZZER_PIN 3
 
 /* this is the number of microseconds to wait after turning the
- * speaker on before turning it off.
+ * speaker on before turning it off. */
 int buzzDelay = 0;
 
 /* toggle is used to only turn on the speaker every other loop
