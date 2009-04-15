@@ -1,5 +1,5 @@
 /* 
-Basic Arduino web server
+Webduino, a simple Arduino web server
 Copyright 2009 Ben Combee
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -134,6 +134,7 @@ private:
                              bool selected);
 
   static void defaultFailCmd(WebServer &server, ConnectionType type);
+  void noRobots();
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
@@ -228,9 +229,14 @@ void WebServer::processConnection()
     skipHeaders();
     
     int urlPrefixLen = strlen(m_urlPrefix);
-    if (requestType == INVALID ||
-        strncmp(request, m_urlPrefix, urlPrefixLen) != 0 ||
-        !dispatchCommand(requestType, request + urlPrefixLen))
+    if (requestType == GET &&
+        strcmp(request, "robots.txt") == 0)
+    {
+      noRobots();
+    }
+    else if (requestType == INVALID ||
+             strncmp(request, m_urlPrefix, urlPrefixLen) != 0 ||
+             !dispatchCommand(requestType, request + urlPrefixLen))
     {
        m_failureCmd(*this, requestType);
     }
@@ -255,6 +261,13 @@ void WebServer::defaultFailCmd(WebServer &server,
                                WebServer::ConnectionType type)
 {
   server.httpFail();
+}
+
+void WebServer::noRobots()
+{
+  httpSuccess("text/plain");
+  P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
+  printP(allowNoneMsg);
 }
 
 void WebServer::httpSuccess(const char *contentType, 
