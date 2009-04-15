@@ -36,6 +36,10 @@ THE SOFTWARE.
 // returns the number of elements in the array
 #define SIZE(array) (sizeof(array) / sizeof(*array))
 
+#ifndef WEBDUINO_FAIL_MESSAGE
+#define WEBDUINO_FAIL_MESSAGE "<h1>EPIC FAIL</h1>"
+#endif
+
 class WebServer: public Server
 {
 public:
@@ -252,7 +256,7 @@ void WebServer::httpFail()
     "HTTP/1.0 400 Bad Request" CRLF
     "Content-Type: text/html" CRLF
     CRLF
-    "<h1>EPIC FAIL</h1>";
+    WEBDUINO_FAIL_MESSAGE;
 
   printP(failMsg);
 }
