@@ -1,4 +1,4 @@
-#summary Documentation for the WebServer clas
+#summary Documentation for the WebServer class
 
 = How Do I Use This? =
 
