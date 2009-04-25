@@ -77,6 +77,12 @@ public:
   // with the P macro
   void printP(const prog_uchar *str);
 
+  // output raw data stored in RAM
+  void write(const char *data, int length);
+
+  // output raw data stored in program memory
+  void writeP(const prog_uchar *data, int length);
+
   // output HTML for a radio button
   void radioButton(const char *name, const char *val, 
                    const char *label, bool selected);
@@ -173,6 +179,25 @@ void WebServer::addCommand(const char *verb, Command *cmd)
   {
     m_commands[m_cmdCount].verb = verb;
     m_commands[m_cmdCount++].cmd = cmd;
+  }
+}
+
+void WebServer::writeP(const prog_uchar *data, int length)
+{
+  char ch;
+  while (length--)
+  {
+    ch = pgm_read_byte(data++);
+    print(ch, BYTE);
+  }
+}
+
+void WebServer::write(const char *data, int length)
+{
+  char ch;
+  while (length--)
+  {
+    print(*(data++), BYTE);
   }
 }
 
