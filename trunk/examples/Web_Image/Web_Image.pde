@@ -1,5 +1,20 @@
 /* Web_Image.pde - example sketch for Webduino library */
 
+/* DISCLAIMER -- the Webduino server can only handle one web connection
+ * at a time.  Because of this, loading the root page on this sketch may
+ * not correctly show the LED icon if the browser starts requesting that
+ * picture before the page has finished loading.
+ *
+ * This problem should be reduced greatly once the Ethernet library
+ * has been modified to do proper packet buffering.  With the library
+ * in Arduino 15, each character is sent in its own TCP/IP packet.
+ * This is very inefficient and means that it takes much longer to
+ * send a web page than it should.  When this bug is fixed, the web
+ * server will have sent its last data and closed the connection by
+ * the time the client reads the HTML, so it's ready to handle the
+ * image request.
+ */
+
 #include "Ethernet.h"
 #include "WebServer.h"
 
