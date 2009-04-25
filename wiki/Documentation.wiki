@@ -43,5 +43,5 @@ In your code, declare a `WebServer` object, be sure to call the `begin()` method
   * bool expect(expectedStr)
 
   * httpFail()
-  * httpSuccess([contentType[, extraHeaders]])
+  * httpSuccess(contentType, extraHeaders)
   * httpSeeOther(otherURL)
