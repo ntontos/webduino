@@ -144,7 +144,7 @@ private:
                              bool selected);
 
   static void defaultFailCmd(WebServer &server, ConnectionType type);
-  void noRobots();
+  void noRobots(ConnectionType type);
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
@@ -258,10 +258,9 @@ void WebServer::processConnection()
     skipHeaders();
     
     int urlPrefixLen = strlen(m_urlPrefix);
-    if (requestType == GET &&
-        strcmp(request, "robots.txt") == 0)
+    if (strcmp(request, "/robots.txt") == 0)
     {
-      noRobots();
+      noRobots(requestType);
     }
     else if (requestType == INVALID ||
              strncmp(request, m_urlPrefix, urlPrefixLen) != 0 ||
@@ -292,11 +291,14 @@ void WebServer::defaultFailCmd(WebServer &server,
   server.httpFail();
 }
 
-void WebServer::noRobots()
+void WebServer::noRobots(ConnectionType type)
 {
   httpSuccess("text/plain");
-  P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
-  printP(allowNoneMsg);
+  if (type != HEAD)
+  {
+    P(allowNoneMsg) = "User-agent: *" CRLF "Disallow: /" CRLF;
+    printP(allowNoneMsg);
+  }
 }
 
 void WebServer::httpSuccess(const char *contentType, 
