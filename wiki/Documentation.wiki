@@ -4,7 +4,7 @@
 
 Put a copy of !WebServer.h in the folder with your sketch file.  In your sketch, add the line 
 
-  `#include "!WebServer.h"`
+  `#include "WebServer.h"`
 
 at the top of the file.
 
@@ -15,7 +15,7 @@ In your code, declare a `WebServer` object, be sure to call the `begin()` method
   * !WebServer::!ConnectionType 
     INVALID, GET, HEAD, POST
 
-  * !WebServer::!Command
+  * !WebServer::Command
     typedef void Command(!WebServer &server, !ConnectionType type)
 
 = Methods =
