@@ -1,34 +1,38 @@
 /* 
-Webduino, a simple Arduino web server
-Copyright 2009 Ben Combee
+   Webduino, a simple Arduino web server
+   Copyright 2009 Ben Combee, Ran Talbott
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+   THE SOFTWARE.
 */
 
 #include <string.h>
 #include <stdlib.h>
 
-#define WEBDUINO_VERSION 1001
-#define WEBDUINO_VERSION_STRING "1.1"
+#define WEBDUINO_VERSION 1002
+#define WEBDUINO_VERSION_STRING "1.2"
 
 // standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
+
+// If processConnection is called without a buffer, it allocates one
+// of 32 bytes
+#define DEFAULT_REQUEST_LENGTH 32
 
 // declare a static string
 #define P(name)   static const prog_uchar name[] PROGMEM
@@ -40,6 +44,25 @@ THE SOFTWARE.
 #define WEBDUINO_FAIL_MESSAGE "<h1>EPIC FAIL</h1>"
 #endif
 
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+/* Return codes from nextURLparam.  NOTE: URLPARAM_EOS is returned
+ * when you call nextURLparam AFTER the last parameter is read.  The
+ * last actual parameter gets an "OK" return code. */
+
+typedef enum URLPARAM_RESULT { URLPARAM_OK,
+                               URLPARAM_NAME_OFLO,
+                               URLPARAM_VALUE_OFLO,
+                               URLPARAM_BOTH_OFLO,
+                               URLPARAM_EOS         // No params left
+};
+
 class WebServer: public Server
 {
 public:
@@ -47,8 +70,13 @@ public:
   enum ConnectionType { INVALID, GET, HEAD, POST };
 
   // any commands registered with the web server have to follow
-  // this prototype
-  typedef void Command(WebServer &server, ConnectionType type);
+  // this prototype.
+  // url_tail contains the part of the URL that wasn't matched against
+  //          the registered command table.
+  // tail_complete is true if the complete URL fit in url_tail,  false if
+  //          part of it was lost because the buffer was too small.
+  typedef void Command(WebServer &server, ConnectionType type, 
+                       char *url_tail, bool tail_complete);
 
   // constructor for webserver object
   WebServer(const char *urlPrefix = "/", int port = 80);
@@ -58,8 +86,14 @@ public:
 
   // check for an incoming connection, and if it exists, process it
   // by reading its request and calling the appropriate command
-  // handler.
+  // handler.  This version is for compatibility with apps written for
+  // version 1.1,  and allocates the URL "tail" buffer internally.
   void processConnection();
+
+  // check for an incoming connection, and if it exists, process it
+  // by reading its request and calling the appropriate command
+  // handler.  This version saves the "tail" of the URL in buff.
+  void processConnection(char *buff, int *bufflen);
 
   // set command that's run when you access the root of the server
   void setDefaultCommand(Command *cmd);
@@ -102,8 +136,19 @@ public:
   // different expected values.
   bool expect(const char *expectedStr);
   
+  // Read the next keyword parameter from the socket.  Assumes that other
+  // code has already skipped over the headers,  and the next thing to
+  // be read will be the start of a keyword.
+  //
   // returns true if we're not at end-of-stream
-  bool readURLParam(char *name, int nameLen, char *value, int valueLen);
+  bool readPOSTparam(char *name, int nameLen, char *value, int valueLen);
+
+  // Read the next keyword parameter from the buffer filled by getRequest.
+  //
+  // returns 0 if everything weent okay,  non-zero if not 
+  // (see the typedef for codes)
+  URLPARAM_RESULT nextURLparam(char **tail, char *name, int nameLen, 
+                               char *value, int valueLen);
 
   // output headers and a message indicating a server error
   void httpFail();
@@ -136,19 +181,21 @@ private:
   char m_cmdCount;
 
   void reset();
-  void getRequest(WebServer::ConnectionType &type, char *request, int length);
-  bool dispatchCommand(ConnectionType requestType, const char *verb);
+  void getRequest(WebServer::ConnectionType &type, char *request, int *length);
+  bool dispatchCommand(ConnectionType requestType, char *verb, 
+                       bool tail_complete);
   void skipHeaders();
   void outputCheckboxOrRadio(const char *element, const char *name, 
                              const char *val, const char *label, 
                              bool selected);
 
-  static void defaultFailCmd(WebServer &server, ConnectionType type);
+  static void defaultFailCmd(WebServer &server, ConnectionType type, 
+                             char *url_tail, bool tail_complete);
   void noRobots(ConnectionType type);
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
-  Server(port), 
+Server(port), 
   m_client(0),
   m_urlPrefix(urlPrefix), 
   m_pushbackDepth(0),
@@ -214,59 +261,74 @@ void WebServer::printCRLF()
   print('\n', BYTE);
 }
 
-bool WebServer::dispatchCommand(ConnectionType requestType, const char *verb)
+bool WebServer::dispatchCommand(ConnectionType requestType, char *verb, bool tail_complete)
 {
-  if (verb[0] == 0)
+  if ((verb[0] == 0) || ((verb[0] == '/') && (verb[1] == 0)))
   {
-    m_defaultCmd(*this, requestType);
+    m_defaultCmd(*this, requestType, verb, tail_complete);
     return true;
   }
-  
+  // We now know that the URL contains at least one character.  And,
+  // if the first character is a slash,  there's more after it.
   if (verb[0] == '/')
   {
-    if (verb[1] == 0)
+    char i;
+    char *qm_loc;
+    int verb_len;
+    int qm_offset;
+    // Skip over the leading "/",  because it makes the code more
+    // efficient and easier to understand.
+    verb++;
+    // Look for a "?" separating the filename part of the URL from the
+    // parameters.  If it's not there, compare to the whole URL.
+    qm_loc = strchr(verb, '?');
+    verb_len = (qm_loc == NULL) ? strlen(verb) : (qm_loc - verb);
+    qm_offset = (qm_loc == NULL) ? 0 : 1;
+    for (i = 0; i < m_cmdCount; ++i)
     {
-      m_defaultCmd(*this, requestType);
-      return true;
-    }
-    else
-    {
-      char i;
-      for (i = 0; i < m_cmdCount; ++i)
+      if ((verb_len == strlen(m_commands[i].verb))
+          && (strncmp(verb, m_commands[i].verb, verb_len) == 0))
       {
-        if (strcmp(verb + 1, m_commands[i].verb) == 0)
-        {
-          m_commands[i].cmd(*this, requestType);
-          return true;
-        }  
-      }     
+        // Skip over the "verb" part of the URL (and the question
+        // mark, if present) when passing it to the "action" routine
+        m_commands[i].cmd(*this, requestType, verb + verb_len + qm_offset, tail_complete);
+        return true;
+      }
     }
-  }    
+  }
   return false;
 }
 
+// processConnection with a default buffer
 void WebServer::processConnection()
+{
+  char request[DEFAULT_REQUEST_LENGTH];
+  int  request_len = DEFAULT_REQUEST_LENGTH;
+  processConnection(request, &request_len);
+}
+
+void WebServer::processConnection(char *buff, int *bufflen)
 {
   Client client = available();
   if (client) {
     m_client = &client;
 
-    static char request[32];
-    request[0] = 0;
+    buff[0] = 0;
     ConnectionType requestType = INVALID; 
-    getRequest(requestType, request, 32);
+    getRequest(requestType, buff, bufflen);
     skipHeaders();
     
     int urlPrefixLen = strlen(m_urlPrefix);
-    if (strcmp(request, "/robots.txt") == 0)
+    if (strcmp(buff, "/robots.txt") == 0)
     {
       noRobots(requestType);
     }
     else if (requestType == INVALID ||
-             strncmp(request, m_urlPrefix, urlPrefixLen) != 0 ||
-             !dispatchCommand(requestType, request + urlPrefixLen))
+             strncmp(buff, m_urlPrefix, urlPrefixLen) != 0 ||
+             !dispatchCommand(requestType, buff + urlPrefixLen, 
+                              (*bufflen) >= 0))
     {
-       m_failureCmd(*this, requestType);
+      m_failureCmd(*this, requestType, buff, (*bufflen) >= 0);
     }
 
     client.stop();
@@ -286,7 +348,9 @@ void WebServer::httpFail()
 }
 
 void WebServer::defaultFailCmd(WebServer &server, 
-                               WebServer::ConnectionType type)
+                               WebServer::ConnectionType type, 
+                               char *url_tail, 
+                               bool tail_complete)
 {
   server.httpFail();
 }
@@ -368,8 +432,8 @@ bool WebServer::expect(const char *str)
   return true;
 }
 
-bool WebServer::readURLParam(char *name, int nameLen, 
-                             char *value, int valueLen)
+bool WebServer::readPOSTparam(char *name, int nameLen, 
+                              char *value, int valueLen)
 {
   // assume name is at current place in stream
   int ch;
@@ -401,7 +465,7 @@ bool WebServer::readURLParam(char *name, int nameLen,
       int ch1 = read();
       int ch2 = read();
       if (ch1 == -1 || ch2 == -1)
-         return false;
+        return false;
       char hex[3] = { ch1, ch2, 0 };
       ch = strtoul(hex, NULL, 16);
     }
@@ -420,23 +484,177 @@ bool WebServer::readURLParam(char *name, int nameLen,
   }
   return (ch != -1);
 }
-  
-void WebServer::getRequest(WebServer::ConnectionType &type, 
-                           char *request, int length)
+
+/* Retrieve a parameter that was encoded as part of the URL, stored in
+ * the buffer pointed to by *tail.  tail is updated to point just past
+ * the last character read from the buffer. */
+URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen, 
+                                        char *value, int valueLen)
 {
-  --length; // save room for NUL
+  // assume name is at current place in stream
+  char ch, hex[3];
+  URLPARAM_RESULT result = URLPARAM_OK;
+  char *s = *tail;
+  bool keep_scanning = TRUE;
+  bool need_value = TRUE;
+
+  // clear out name and value so they'll be NUL terminated
+  memset(name, 0, nameLen);
+  memset(value, 0, valueLen);
+  
+  if (*s == 0)
+    return URLPARAM_EOS;
+  // Read the keyword name
+  while (keep_scanning)
+  {
+    ch = *s++;
+    switch (ch)
+    {
+    case 0:
+      s--;  // Back up to point to terminating NUL
+      // Fall through to "stop the scan" code
+    case '&':
+      /* that's end of pair, go away */
+      keep_scanning = FALSE;
+      need_value = FALSE;
+      break;
+    case '+':
+      ch = ' ';
+      break;
+    case '%':
+      /* handle URL encoded characters by converting back 
+       * to original form */
+      if ((hex[0] = *s++) == 0)
+      {
+        s--;        // Back up to NUL
+        keep_scanning = FALSE;
+        need_value = FALSE;
+      }
+      else
+      {
+        if ((hex[1] = *s++) == 0)
+        {
+          s--;  // Back up to NUL
+          keep_scanning = FALSE;
+          need_value = FALSE;
+        }
+        else
+        {
+          hex[2] = 0;
+          ch = strtoul(hex, NULL, 16);
+        }
+      }
+      break;
+    case '=':
+      /* that's end of name, so switch to storing in value */
+      keep_scanning = FALSE;
+      break;
+    }
+    
+    
+    // check against 1 so we don't overwrite the final NUL
+    if (keep_scanning && (nameLen > 1))
+    {
+      *name++ = ch;
+      --nameLen;
+    }
+    else
+      result = URLPARAM_NAME_OFLO;
+  }
+  
+  if (need_value && (*s != 0))
+  {
+    keep_scanning = TRUE;
+    while (keep_scanning)
+    {
+      ch = *s++;
+      switch (ch)
+      {
+      case 0:
+        s--;  // Back up to point to terminating NUL
+              // Fall through to "stop the scan" code
+      case '&':
+        /* that's end of pair, go away */
+        keep_scanning = FALSE;
+        need_value = FALSE;
+        break;
+      case '+':
+        ch = ' ';
+        break;
+      case '%':
+        /* handle URL encoded characters by converting back to original form */
+        if ((hex[0] = *s++) == 0)
+        {
+          s--;  // Back up to NUL
+          keep_scanning = FALSE;
+          need_value = FALSE;
+        }
+        else
+        {
+          if ((hex[1] = *s++) == 0)
+          {
+            s--;  // Back up to NUL
+            keep_scanning = FALSE;
+            need_value = FALSE;
+          }
+          else
+          {
+            hex[2] = 0;
+            ch = strtoul(hex, NULL, 16);
+          }
+                  
+        }
+        break;
+      }
+          
+          
+      // check against 1 so we don't overwrite the final NUL
+      if (keep_scanning && (valueLen > 1))
+      {
+        *value++ = ch;
+        --valueLen;
+      }
+      else
+        result =  (result == URLPARAM_OK) ? URLPARAM_VALUE_OFLO : URLPARAM_BOTH_OFLO;
+          
+    }
+  }
+  *tail = s;
+  return result;
+}
+
+
+
+// Read and parse the first line of the request header.
+// The "command" (GET/HEAD/POST) is translated into a numeric value in type.
+// The URL is stored in request,  up to the length passed in length
+// NOTE 1: length must include one byte for the terminating NUL.
+// NOTE 2: request is NOT checked for NULL,  nor length for a value < 1.
+// Reading stops when the code encounters a space, CR, or LF.  If the HTTP
+// version was supplied by the client,  it will still be waiting in the input
+// stream when we exit.
+//
+// On return, length contains the amount of space left in request.  If it's
+// less than 0,  the URL was longer than the buffer,  and part of it had to
+// be discarded.
+
+void WebServer::getRequest(WebServer::ConnectionType &type, 
+                           char *request, int *length)
+{
+  --*length; // save room for NUL
   
   type = INVALID;
 
   // store the GET/POST line of the request
   if (expect("GET "))
-      type = GET;
+    type = GET;
   else if (expect("HEAD "))
-      type = HEAD;
+    type = HEAD;
   else if (expect("POST "))
-      type = POST;
+    type = POST;
 
-  // if it doesn't start with any of those, we have an unknown method so just eat rest of header 
+  // if it doesn't start with any of those, we have an unknown method
+  // so just eat rest of header 
 
   int ch;
   while ((ch = read()) != -1)
@@ -444,14 +662,13 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
     // stop storing at first space or end of line
     if (ch == ' ' || ch == '\n' || ch == '\r')
     {
-      length = 0;
       break;
     }
-    if (length > 0)
+    if (*length > 0)
     {
       *request = ch;
       ++request;
-      --length;
+      --*length;
     }
   }
   // NUL terminate
@@ -461,7 +678,7 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
 void WebServer::skipHeaders()
 {
   /* look for the double CRLF at the end of the headers, read
-   * characters until then store the GET/POST line of the request */
+   * and discard characters until then  */
   char state = 0;
   int ch; 
   while ((ch = read()) != -1)
