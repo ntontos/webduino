@@ -3,11 +3,16 @@
 #include "Ethernet.h"
 #include "WebServer.h"
 
-// CHANGE THIS TO YOUR OWN UNIQUE VALUE
-static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
+/* CHANGE THIS TO YOUR OWN UNIQUE VALUE.  The MAC number should be
+ * different from any other devices on your network or you'll have
+ * problems receiving packets. */
+static uint8_t mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
-// CHANGE THIS TO MATCH YOUR HOST NETWORK
-static uint8_t ip[4] = { 192, 168, 42, 51 }; // area 51!
+/* CHANGE THIS TO MATCH YOUR HOST NETWORK.  Most home networks are in
+ * the 192.168.0.XXX or 192.168.1.XXX subrange.  Pick an address
+ * that's not in use and isn't going to be automatically allocated by
+ * DHCP from your router. */
+static uint8_t ip[] = { 192, 168, 1, 64 };
 
 /* all URLs on this server will start with /buzz because of how we
  * define the PREFIX value.  We also will listen on port 80, the
@@ -30,7 +35,7 @@ char toggle = 0;
  * handles both GET and POST requests.  For a GET, it returns a simple
  * page with some buttons.  For a POST, it saves the value posted to
  * the buzzDelay variable, affecting the output of the speaker */
-void buzzCmd(WebServer &server, WebServer::ConnectionType type)
+void buzzCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   if (type == WebServer::POST)
   {
@@ -38,11 +43,11 @@ void buzzCmd(WebServer &server, WebServer::ConnectionType type)
     char name[16], value[16];
     do
     {
-      /* readURLParam returns false when there are no more parameters
+      /* nextURLparam returns false when there are no more parameters
        * to read from the input.  We pass in buffers for it to store
        * the name and value strings along with the length of those
        * buffers. */
-      repeat = server.readURLParam(name, 16, value, 16);
+      repeat = server.readPOSTparam(name, 16, value, 16);
 
       /* this is a standard string comparison function.  It returns 0
        * when there's an exact match.  We're looking for a parameter

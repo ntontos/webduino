@@ -30,7 +30,7 @@ char toggle = 0;
  * handles both GET and POST requests.  For a GET, it returns a simple
  * page with some buttons.  For a POST, it saves the value posted to
  * the buzzDelay variable, affecting the output of the speaker */
-void buzzCmd(WebServer &server, WebServer::ConnectionType type)
+void buzzCmd(WebServer &server, WebServer::ConnectionType type, char *, bool)
 {
   if (type == WebServer::POST)
   {
