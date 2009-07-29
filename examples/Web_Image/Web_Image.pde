@@ -1,4 +1,5 @@
 /* Web_Image.pde - example sketch for Webduino library */
+/* For webduino version 1.2 */
 
 /* DISCLAIMER -- the Webduino server can only handle one web connection
  * at a time.  Because of this, loading the root page on this sketch may
@@ -19,15 +20,13 @@
 #include "WebServer.h"
 
 // CHANGE THIS TO YOUR OWN UNIQUE VALUE
-static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
-
-// CHANGE THIS TO MATCH YOUR HOST NETWORK
-static uint8_t ip[4] = { 192, 168, 42, 51 }; // area 51!
+static uint8_t mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+static uint8_t ip[] = { 192, 168, 1, 64 };
 
 WebServer webserver("", 80);
 
 /* The default page just returns HTML to show the image */
-void defaultCmd(WebServer &server, WebServer::ConnectionType type)
+void defaultCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   if (type == WebServer::POST)
   {
@@ -54,7 +53,7 @@ void defaultCmd(WebServer &server, WebServer::ConnectionType type)
   }
 }
 
-void imageCmd(WebServer &server, WebServer::ConnectionType type)
+void imageCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   /* this data was taken from a PNG file that was converted to a C data structure
    * by running it through the directfb-csource application. */

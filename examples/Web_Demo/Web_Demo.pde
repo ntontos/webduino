@@ -1,5 +1,25 @@
 /* Web_Demo.pde -- sample code for Webduino server library */
 
+/*
+ * To use this demo,  enter one of the following USLs into your browser.
+ * Replace "host" with the IP address assigned to the Arduino.
+ *
+ * http://host/demo
+ *
+ * This URL brings up a display of the values READ on digital pins 0-9
+ * and analog pins 0-5.  This is done with a call to defaultCmd.
+ * 
+ * 
+ * http://host/demo/form
+ *
+ * This URL also brings up a display of the values READ on digital pins 0-9
+ * and analog pins 0-5.  But it's done as a form,  by the "formCmd" function,
+ * and the digital pins are shown as radio buttons you can change.
+ * When you click the "Submit" button,  it does a POST that sets the
+ * digital pins,  re-reads them,  and re-displays the form.
+ * 
+ */
+
 #include "Ethernet.h"
 #include "WebServer.h"
 
@@ -11,10 +31,10 @@ inline Print &operator <<(Print &obj, T arg)
 
 
 // CHANGE THIS TO YOUR OWN UNIQUE VALUE
-static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
+static uint8_t mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
 
 // CHANGE THIS TO MATCH YOUR HOST NETWORK
-static uint8_t ip[4] = { 192, 168, 42, 51 }; // area 51!
+static uint8_t ip[] = { 192, 168, 1, 64 };
 
 #define PREFIX "/demo"
 
@@ -23,7 +43,7 @@ WebServer webserver(PREFIX, 80);
 // commands are functions that get called by the webserver framework
 // they can read any posted data from client, and they output to server
 
-void jsonCmd(WebServer &server, WebServer::ConnectionType type)
+void jsonCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   if (type == WebServer::POST)
   {
@@ -35,7 +55,7 @@ void jsonCmd(WebServer &server, WebServer::ConnectionType type)
   
   if (type == WebServer::HEAD)
     return;
-    
+
   int i;    
   server << "{ ";
   for (i = 0; i <= 9; ++i)
@@ -44,7 +64,7 @@ void jsonCmd(WebServer &server, WebServer::ConnectionType type)
     int val = digitalRead(i);
     server << "\"d" << i << "\": " << val << ", ";
   }
-        
+
   for (i = 0; i <= 5; ++i)
   {
     int val = analogRead(i);
@@ -76,7 +96,7 @@ void outputPins(WebServer &server, WebServer::ConnectionType type, bool addContr
 
   if (addControls)
     server << "<form action='" PREFIX "/form' method='post'>";
-  
+
   server << "<h1>Digital Pins</h1><p>";
 
   for (i = 0; i <= 9; ++i)
@@ -98,23 +118,23 @@ void outputPins(WebServer &server, WebServer::ConnectionType type, bool addContr
 
     server << "<br/>";
   }
-        
+
   server << "</p><h1>Analog Pins</h1><p>";
   for (i = 0; i <= 5; ++i)
   {
     int val = analogRead(i);
     server << "Analog " << i << ": " << val << "<br/>";
   }
-      
+
   server << "</p>";
-  
+
   if (addControls)
     server << "<input type='submit' value='Submit'/></form>";
-  
+
   server << "</body></html>";
 }
 
-void formCmd(WebServer &server, WebServer::ConnectionType type)
+void formCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   if (type == WebServer::POST)
   {
@@ -122,7 +142,7 @@ void formCmd(WebServer &server, WebServer::ConnectionType type)
     char name[16], value[16];
     do
     {
-      repeat = server.readURLParam(name, 16, value, 16);
+      repeat = server.readPOSTparam(name, 16, value, 16);
       if (name[0] == 'd')
       {
         int pin = strtoul(name + 1, NULL, 10);
@@ -130,14 +150,14 @@ void formCmd(WebServer &server, WebServer::ConnectionType type)
         digitalWrite(pin, val);
       }
     } while (repeat);
-    
+
     server.httpSeeOther(PREFIX "/form");
   }
   else
     outputPins(server, type, true);
 }
 
-void defaultCmd(WebServer &server, WebServer::ConnectionType type)
+void defaultCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   outputPins(server, type, false);  
 }
