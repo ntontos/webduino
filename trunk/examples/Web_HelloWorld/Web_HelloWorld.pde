@@ -23,7 +23,7 @@ WebServer webserver(PREFIX, 80);
 /* commands are functions that get called by the webserver framework
  * they can read any posted data from client, and they output to the
  * server to send data back to the web browser. */
-void helloCmd(WebServer &server, WebServer::ConnectionType type)
+void helloCmd(WebServer &server, WebServer::ConnectionType type, char *, bool)
 {
   /* this line sends the standard "we're all OK" headers back to the
      browser */
