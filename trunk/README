@@ -47,13 +47,18 @@ http://groups.google.com/group/webduino.
 HISTORY
 =======
 
-Release 1.2:
+*** Release 1.2.1
+
+Fixed HelloWorld.pde source file which hadn't been updated for 1.2
+library changes.
+
+Added additional version history to README.
+
+*** Release 1.2
 
 This is an update to Ben Combee's Webduino library that adds some
 support for parameters passed as part of the URL.  I'm pretty sure I
 haven't added any new bugs, but it should still be considered "beta".
-
- Major changes:
 
 1. The "user callback" functions have two new parameters: the
 "parameters" part of the URL string, and a flag indicating whether the
@@ -74,7 +79,16 @@ confusing with the addition of #2.
 URL buffer and specify the size.  The old version that allocates only
 32 bytes is still there.
 
+*** Release 1.1
 
+New example: Web_Image - serving a PNG fileK
 
-Ran
+New example: Web_AjaxBuzzer - using AJAX libraries from the net
 
+httpSuccess call parameters modified to allow adding headers
+
+Code cleanups
+
+*** Release 1.0
+
+Initial Version
