@@ -1,4 +1,5 @@
-/* 
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+
    Webduino, a simple Arduino web server
    Copyright 2009 Ben Combee, Ran Talbott
 
@@ -24,8 +25,8 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define WEBDUINO_VERSION 1002
-#define WEBDUINO_VERSION_STRING "1.2"
+#define WEBDUINO_VERSION 1003
+#define WEBDUINO_VERSION_STRING "1.3"
 
 // standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
@@ -42,6 +43,16 @@
 
 #ifndef WEBDUINO_FAIL_MESSAGE
 #define WEBDUINO_FAIL_MESSAGE "<h1>EPIC FAIL</h1>"
+#endif
+
+// add "#define WEBDUINO_SERIAL_DEBUGGING 1" to your application
+// before including WebServer.h to have incoming requests logged to
+// the serial port.
+#ifndef WEBDUINO_SERIAL_DEBUGGING
+#define WEBDUINO_SERIAL_DEBUGGING 0
+#endif
+#if WEBDUINO_SERIAL_DEBUGGING
+#include <HardwareSerial.h>
 #endif
 
 #ifndef TRUE
@@ -75,7 +86,7 @@ public:
   //          the registered command table.
   // tail_complete is true if the complete URL fit in url_tail,  false if
   //          part of it was lost because the buffer was too small.
-  typedef void Command(WebServer &server, ConnectionType type, 
+  typedef void Command(WebServer &server, ConnectionType type,
                        char *url_tail, bool tail_complete);
 
   // constructor for webserver object
@@ -106,7 +117,7 @@ public:
 
   // utility function to output CRLF pair
   void printCRLF();
-  
+
   // output a string stored in program memory, usually one defined
   // with the P macro
   void printP(const prog_uchar *str);
@@ -118,24 +129,29 @@ public:
   void writeP(const prog_uchar *data, int length);
 
   // output HTML for a radio button
-  void radioButton(const char *name, const char *val, 
+  void radioButton(const char *name, const char *val,
                    const char *label, bool selected);
 
   // output HTML for a checkbox
-  void checkBox(const char *name, const char *val, 
+  void checkBox(const char *name, const char *val,
                 const char *label, bool selected);
 
   // returns next character or -1 if we're at end-of-stream
   int read();
 
   // put a character that's been read back into the input pool
-  void push(char ch);
-  
+  void push(int ch);
+
   // returns true if the string is next in the stream.  Doesn't
   // consume any character if false, so can be used to try out
   // different expected values.
   bool expect(const char *expectedStr);
-  
+
+  // returns true if a number, with possible whitespace in front, was
+  // read from the server stream.  number will be set with the new
+  // value or 0 if nothing was read.
+  bool readInt(int &number);
+
   // Read the next keyword parameter from the socket.  Assumes that other
   // code has already skipped over the headers,  and the next thing to
   // be read will be the start of a keyword.
@@ -145,9 +161,9 @@ public:
 
   // Read the next keyword parameter from the buffer filled by getRequest.
   //
-  // returns 0 if everything weent okay,  non-zero if not 
+  // returns 0 if everything weent okay,  non-zero if not
   // (see the typedef for codes)
-  URLPARAM_RESULT nextURLparam(char **tail, char *name, int nameLen, 
+  URLPARAM_RESULT nextURLparam(char **tail, char *name, int nameLen,
                                char *value, int valueLen);
 
   // output headers and a message indicating a server error
@@ -156,7 +172,7 @@ public:
   // output standard headers indicating "200 Success".  You can change the
   // type of the data you're outputting or also add extra headers like
   // "Refresh: 1".  Extra headers should each be terminated with CRLF.
-  void httpSuccess(const char *contentType = "text/html; charset=utf-8", 
+  void httpSuccess(const char *contentType = "text/html; charset=utf-8",
                    const char *extraHeaders = NULL);
 
   // used with POST to output a redirect to another URL.  This is
@@ -171,6 +187,9 @@ private:
   char m_pushback[32];
   char m_pushbackDepth;
 
+  int m_contentLength;
+  bool m_readingContent;
+
   Command *m_failureCmd;
   Command *m_defaultCmd;
   struct CommandMap
@@ -182,25 +201,26 @@ private:
 
   void reset();
   void getRequest(WebServer::ConnectionType &type, char *request, int *length);
-  bool dispatchCommand(ConnectionType requestType, char *verb, 
+  bool dispatchCommand(ConnectionType requestType, char *verb,
                        bool tail_complete);
-  void skipHeaders();
-  void outputCheckboxOrRadio(const char *element, const char *name, 
-                             const char *val, const char *label, 
+  void processHeaders();
+  void outputCheckboxOrRadio(const char *element, const char *name,
+                             const char *val, const char *label,
                              bool selected);
 
-  static void defaultFailCmd(WebServer &server, ConnectionType type, 
+  static void defaultFailCmd(WebServer &server, ConnectionType type,
                              char *url_tail, bool tail_complete);
   void noRobots(ConnectionType type);
 };
 
 WebServer::WebServer(const char *urlPrefix, int port) :
-Server(port), 
+Server(port),
   m_client(0),
-  m_urlPrefix(urlPrefix), 
+  m_urlPrefix(urlPrefix),
   m_pushbackDepth(0),
-  m_cmdCount(0), 
-  m_failureCmd(&defaultFailCmd), 
+  m_cmdCount(0),
+  m_contentLength(0),
+  m_failureCmd(&defaultFailCmd),
   m_defaultCmd(&defaultFailCmd)
 {
 }
@@ -261,7 +281,8 @@ void WebServer::printCRLF()
   print('\n', BYTE);
 }
 
-bool WebServer::dispatchCommand(ConnectionType requestType, char *verb, bool tail_complete)
+bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
+        bool tail_complete)
 {
   if ((verb[0] == 0) || ((verb[0] == '/') && (verb[1] == 0)))
   {
@@ -291,7 +312,9 @@ bool WebServer::dispatchCommand(ConnectionType requestType, char *verb, bool tai
       {
         // Skip over the "verb" part of the URL (and the question
         // mark, if present) when passing it to the "action" routine
-        m_commands[i].cmd(*this, requestType, verb + verb_len + qm_offset, tail_complete);
+        m_commands[i].cmd(*this, requestType,
+        verb + verb_len + qm_offset,
+        tail_complete);
         return true;
       }
     }
@@ -310,14 +333,16 @@ void WebServer::processConnection()
 void WebServer::processConnection(char *buff, int *bufflen)
 {
   Client client = available();
+
   if (client) {
     m_client = &client;
 
+    m_readingContent = false;
     buff[0] = 0;
-    ConnectionType requestType = INVALID; 
+    ConnectionType requestType = INVALID;
     getRequest(requestType, buff, bufflen);
-    skipHeaders();
-    
+    processHeaders();
+
     int urlPrefixLen = strlen(m_urlPrefix);
     if (strcmp(buff, "/robots.txt") == 0)
     {
@@ -325,7 +350,7 @@ void WebServer::processConnection(char *buff, int *bufflen)
     }
     else if (requestType == INVALID ||
              strncmp(buff, m_urlPrefix, urlPrefixLen) != 0 ||
-             !dispatchCommand(requestType, buff + urlPrefixLen, 
+             !dispatchCommand(requestType, buff + urlPrefixLen,
                               (*bufflen) >= 0))
     {
       m_failureCmd(*this, requestType, buff, (*bufflen) >= 0);
@@ -338,7 +363,7 @@ void WebServer::processConnection(char *buff, int *bufflen)
 
 void WebServer::httpFail()
 {
-  P(failMsg) = 
+  P(failMsg) =
     "HTTP/1.0 400 Bad Request" CRLF
     "Content-Type: text/html" CRLF
     CRLF
@@ -347,9 +372,9 @@ void WebServer::httpFail()
   printP(failMsg);
 }
 
-void WebServer::defaultFailCmd(WebServer &server, 
-                               WebServer::ConnectionType type, 
-                               char *url_tail, 
+void WebServer::defaultFailCmd(WebServer &server,
+                               WebServer::ConnectionType type,
+                               char *url_tail,
                                bool tail_complete)
 {
   server.httpFail();
@@ -365,7 +390,7 @@ void WebServer::noRobots(ConnectionType type)
   }
 }
 
-void WebServer::httpSuccess(const char *contentType, 
+void WebServer::httpSuccess(const char *contentType,
                             const char *extraHeaders)
 {
   P(successMsg1) =
@@ -395,17 +420,62 @@ void WebServer::httpSeeOther(const char *otherURL)
 int WebServer::read()
 {
   if (m_pushbackDepth == 0)
-    return m_client->read();
+  {
+    while (m_client->connected())
+    {
+      // stop reading the socket early if we get to content-length
+      // characters in the POST.  This is because some clients leave
+      // the socket open because they assume HTTP keep-alive.
+      if (m_readingContent)
+      {
+        if (m_contentLength == 0)
+        {
+#if WEBDUINO_SERIAL_DEBUGGING
+          Serial.println("\n*** End of content, terminating connection");
+#endif
+          return -1;
+        }
+        --m_contentLength;
+      }
+
+      int ch = m_client->read();
+
+      // if we get a character, return it, otherwise continue in while
+      // loop, checking connection status
+      if (ch != -1)
+      {
+#if WEBDUINO_SERIAL_DEBUGGING
+        if (ch == '\r')
+          Serial.print("<CR>");
+        else if (ch == '\n')
+          Serial.println("<LF>");
+        else
+          Serial.print((char)ch);
+#endif
+        return ch;
+      }
+    }
+
+    // connection lost, return EOF
+#if WEBDUINO_SERIAL_DEBUGGING
+    Serial.println("*** Connection lost");
+#endif
+    return -1;
+  }
   else
     return m_pushback[--m_pushbackDepth];
 }
 
-void WebServer::push(char ch)
+void WebServer::push(int ch)
 {
+  // don't allow pushing EOF
+  if (ch == -1)
+    return;
+
   m_pushback[m_pushbackDepth++] = ch;
   // can't raise error here, so just replace last char over and over
   if (m_pushbackDepth == SIZE(m_pushback))
-    m_pushbackDepth = SIZE(m_pushback) - 1;  
+    m_pushbackDepth = SIZE(m_pushback) - 1;
 }
 
 void WebServer::reset()
@@ -422,8 +492,7 @@ bool WebServer::expect(const char *str)
     if (ch != *curr++)
     {
       // push back ch and the characters we accepted
-      if (ch != -1)
-        push(ch);
+      push(ch);
       while (--curr != str)
         push(curr[-1]);
       return false;
@@ -432,7 +501,41 @@ bool WebServer::expect(const char *str)
   return true;
 }
 
-bool WebServer::readPOSTparam(char *name, int nameLen, 
+bool WebServer::readInt(int &number)
+{
+  bool negate = false;
+  bool gotNumber = false;
+  int ch;
+  number = 0;
+
+  // absorb whitespace
+  do
+  {
+    ch = read();
+  } while (ch == ' ' || ch == '\t');
+
+  // check for leading minus sign
+  if (ch == '-')
+  {
+    negate = true;
+    ch = read();
+  }
+
+  // read digits to update number, exit when we find non-digit
+  while (ch >= '0' && ch <= '9')
+  {
+    gotNumber = true;
+    number = number * 10 + ch - '0';
+    ch = read();
+  }
+
+  push(ch);
+  if (negate)
+    number = -number;
+  return gotNumber;
+}
+
+bool WebServer::readPOSTparam(char *name, int nameLen,
                               char *value, int valueLen)
 {
   // assume name is at current place in stream
@@ -441,7 +544,11 @@ bool WebServer::readPOSTparam(char *name, int nameLen,
   // clear out name and value so they'll be NUL terminated
   memset(name, 0, nameLen);
   memset(value, 0, valueLen);
-  
+
+  // decrement length so we don't write into NUL terminator
+  --nameLen;
+  --valueLen;
+
   while ((ch = read()) != -1)
   {
     if (ch == '+')
@@ -482,13 +589,16 @@ bool WebServer::readPOSTparam(char *name, int nameLen,
       --valueLen;
     }
   }
-  return (ch != -1);
+
+  // if we get here, we hit the end-of-file, so POST is over and there
+  // are no more parameters
+  return false;
 }
 
 /* Retrieve a parameter that was encoded as part of the URL, stored in
  * the buffer pointed to by *tail.  tail is updated to point just past
  * the last character read from the buffer. */
-URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen, 
+URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
                                         char *value, int valueLen)
 {
   // assume name is at current place in stream
@@ -501,7 +611,7 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
   // clear out name and value so they'll be NUL terminated
   memset(name, 0, nameLen);
   memset(value, 0, valueLen);
-  
+
   if (*s == 0)
     return URLPARAM_EOS;
   // Read the keyword name
@@ -522,7 +632,7 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
       ch = ' ';
       break;
     case '%':
-      /* handle URL encoded characters by converting back 
+      /* handle URL encoded characters by converting back
        * to original form */
       if ((hex[0] = *s++) == 0)
       {
@@ -550,8 +660,8 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
       keep_scanning = FALSE;
       break;
     }
-    
-    
+
+
     // check against 1 so we don't overwrite the final NUL
     if (keep_scanning && (nameLen > 1))
     {
@@ -561,7 +671,7 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
     else
       result = URLPARAM_NAME_OFLO;
   }
-  
+
   if (need_value && (*s != 0))
   {
     keep_scanning = TRUE;
@@ -602,12 +712,12 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
             hex[2] = 0;
             ch = strtoul(hex, NULL, 16);
           }
-                  
+
         }
         break;
       }
-          
-          
+
+
       // check against 1 so we don't overwrite the final NUL
       if (keep_scanning && (valueLen > 1))
       {
@@ -615,8 +725,9 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
         --valueLen;
       }
       else
-        result =  (result == URLPARAM_OK) ? URLPARAM_VALUE_OFLO : URLPARAM_BOTH_OFLO;
-          
+        result = (result == URLPARAM_OK) ?
+          URLPARAM_VALUE_OFLO :
+          URLPARAM_BOTH_OFLO;
     }
   }
   *tail = s;
@@ -638,11 +749,11 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
 // less than 0,  the URL was longer than the buffer,  and part of it had to
 // be discarded.
 
-void WebServer::getRequest(WebServer::ConnectionType &type, 
+void WebServer::getRequest(WebServer::ConnectionType &type,
                            char *request, int *length)
 {
   --*length; // save room for NUL
-  
+
   type = INVALID;
 
   // store the GET/POST line of the request
@@ -654,7 +765,7 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
     type = POST;
 
   // if it doesn't start with any of those, we have an unknown method
-  // so just eat rest of header 
+  // so just eat rest of header
 
   int ch;
   while ((ch = read()) != -1)
@@ -675,34 +786,31 @@ void WebServer::getRequest(WebServer::ConnectionType &type,
   *request = 0;
 }
 
-void WebServer::skipHeaders()
+void WebServer::processHeaders()
 {
-  /* look for the double CRLF at the end of the headers, read
-   * and discard characters until then  */
-  char state = 0;
-  int ch; 
-  while ((ch = read()) != -1)
+  // look for two things: the Content-Length header and the double-CRLF
+  // that ends the headers.
+
+  while (1)
   {
-    if (ch == '\r')
+    if (expect("\r\n\r\n"))
     {
-      if (state == 0) state = 1; 
-      else if (state == 2) state = 3;
+      m_readingContent = true;
+      return;
     }
-    else if (ch == '\n') 
-    { 
-      if (state == 1) state = 2; 
-      else if (state == 3) return; 
-    }
-    else
+    if (expect("Content-Length:"))
     {
-      // any other character resets the search state
-      state = 0;
+      readInt(m_contentLength);
+    }
+    if (read() == -1)
+    {
+      return;
     }
   }
 }
 
-void WebServer::outputCheckboxOrRadio(const char *element, const char *name, 
-                                      const char *val, const char *label, 
+void WebServer::outputCheckboxOrRadio(const char *element, const char *name,
+                                      const char *val, const char *label,
                                       bool selected)
 {
   P(cbPart1a) = "<label><input type='";
@@ -727,13 +835,13 @@ void WebServer::outputCheckboxOrRadio(const char *element, const char *name,
   printP(cbPart5);
 }
 
-void WebServer::checkBox(const char *name, const char *val, 
+void WebServer::checkBox(const char *name, const char *val,
                          const char *label, bool selected)
 {
   outputCheckboxOrRadio("checkbox", name, val, label, selected);
 }
 
-void WebServer::radioButton(const char *name, const char *val, 
+void WebServer::radioButton(const char *name, const char *val,
                             const char *label, bool selected)
 {
   outputCheckboxOrRadio("radio", name, val, label, selected);
