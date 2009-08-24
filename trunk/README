@@ -51,6 +51,15 @@ http://groups.google.com/group/webduino.
 HISTORY
 =======
 
+*** Release 1.3.1
+
+Bug fix release. Found a problem when last header received was the
+Content-Lenght header that would cause the web server to hang.  Thanks
+to /warmfusion/ on the Google Code site for a great bug report.
+
+Added more debugging output when ARDUINO_SERIAL_DEBUGGING is set to 2
+or higher.
+
 *** Release 1.3
 
 Updated the library to better process POSTs by only reading at most
