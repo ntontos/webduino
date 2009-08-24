@@ -26,7 +26,7 @@
 #include <stdlib.h>
 
 #define WEBDUINO_VERSION 1003
-#define WEBDUINO_VERSION_STRING "1.3"
+#define WEBDUINO_VERSION_STRING "1.3.1"
 
 // standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
@@ -340,8 +340,21 @@ void WebServer::processConnection(char *buff, int *bufflen)
     m_readingContent = false;
     buff[0] = 0;
     ConnectionType requestType = INVALID;
+#if WEBDUINO_SERIAL_DEBUGGING > 1
+    Serial.println("*** checking request ***");
+#endif
     getRequest(requestType, buff, bufflen);
+#if WEBDUINO_SERIAL_DEBUGGING > 1
+    Serial.print("*** requestType = ");
+    Serial.print((int)requestType);
+    Serial.println(", request = \"");
+    Serial.print(buff);
+    Serial.println("\" ***");
+#endif
     processHeaders();
+#if WEBDUINO_SERIAL_DEBUGGING > 1
+    Serial.println("*** headers complete ***");
+#endif
 
     int urlPrefixLen = strlen(m_urlPrefix);
     if (strcmp(buff, "/robots.txt") == 0)
@@ -356,6 +369,9 @@ void WebServer::processConnection(char *buff, int *bufflen)
       m_failureCmd(*this, requestType, buff, (*bufflen) >= 0);
     }
 
+#if WEBDUINO_SERIAL_DEBUGGING > 1
+    Serial.println("*** stopping connection ***");
+#endif
     client.stop();
     m_client = NULL;
   }
@@ -430,7 +446,7 @@ int WebServer::read()
       {
         if (m_contentLength == 0)
         {
-#if WEBDUINO_SERIAL_DEBUGGING
+#if WEBDUINO_SERIAL_DEBUGGING > 1
           Serial.println("\n*** End of content, terminating connection");
 #endif
           return -1;
@@ -793,15 +809,24 @@ void WebServer::processHeaders()
 
   while (1)
   {
-    if (expect("\r\n\r\n"))
+    if (expect("Content-Length:"))
+    {
+      readInt(m_contentLength);
+#if WEBDUINO_SERIAL_DEBUGGING > 1
+      Serial.print("\n*** got Content-Length of ");
+      Serial.print(m_contentLength);
+      Serial.print(" ***");
+#endif
+      continue;
+    }
+
+    if (expect(CRLF CRLF))
     {
       m_readingContent = true;
       return;
     }
-    if (expect("Content-Length:"))
-    {
-      readInt(m_contentLength);
-    }
+
+    // no expect checks hit, so just absorb a character and try again
     if (read() == -1)
     {
       return;
