@@ -1,4 +1,4 @@
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*-
+/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil;  c-file-style: "k&r"; c-basic-offset: 2; -*-
 
    Webduino, a simple Arduino web server
    Copyright 2009 Ben Combee, Ran Talbott
@@ -22,24 +22,37 @@
    THE SOFTWARE.
 */
 
+#ifndef WEBDUINO_H_
+#define WEBDUINO_H_
+
 #include <string.h>
 #include <stdlib.h>
 
-#define WEBDUINO_VERSION 1003
-#define WEBDUINO_VERSION_STRING "1.3.1"
+/********************************************************************
+ * CONFIGURATION
+ ********************************************************************/
+
+#define WEBDUINO_VERSION 1004
+#define WEBDUINO_VERSION_STRING "1.4"
+
+#if WEBDUINO_SUPRESS_SERVER_HEADER
+#define WEBDUINO_SERVER_HEADER ""
+#else
+#define WEBDUINO_SERVER_HEADER "Server: Webduino/" WEBDUINO_VERSION_STRING CRLF
+#endif
 
 // standard END-OF-LINE marker in HTTP
 #define CRLF "\r\n"
 
 // If processConnection is called without a buffer, it allocates one
 // of 32 bytes
-#define DEFAULT_REQUEST_LENGTH 32
+#define WEBDUINO_DEFAULT_REQUEST_LENGTH 32
 
-// declare a static string
-#define P(name)   static const prog_uchar name[] PROGMEM
-
-// returns the number of elements in the array
-#define SIZE(array) (sizeof(array) / sizeof(*array))
+// How long to wait before considering a connection as dead when
+// reading the HTTP request.  Used to avoid DOS attacks.
+#ifndef WEBDUINO_READ_TIMEOUT_IN_MS
+#define WEBDUINO_READ_TIMEOUT_IN_MS 1000
+#endif
 
 #ifndef WEBDUINO_FAIL_MESSAGE
 #define WEBDUINO_FAIL_MESSAGE "<h1>EPIC FAIL</h1>"
@@ -55,13 +68,18 @@
 #include <HardwareSerial.h>
 #endif
 
-#ifndef TRUE
-#define TRUE 1
-#endif
+// declared in wiring.h
+extern "C" unsigned long millis(void);
 
-#ifndef FALSE
-#define FALSE 0
-#endif
+// declare a static string
+#define P(name)   static const prog_uchar name[] PROGMEM
+
+// returns the number of elements in the array
+#define SIZE(array) (sizeof(array) / sizeof(*array))
+
+/********************************************************************
+ * DECLARATIONS
+ ********************************************************************/
 
 /* Return codes from nextURLparam.  NOTE: URLPARAM_EOS is returned
  * when you call nextURLparam AFTER the last parameter is read.  The
@@ -74,7 +92,7 @@ typedef enum URLPARAM_RESULT { URLPARAM_OK,
                                URLPARAM_EOS         // No params left
 };
 
-class WebServer: public Server
+class WebServer: public Print
 {
 public:
   // passed to a command to indicate what kind of request was received
@@ -122,11 +140,8 @@ public:
   // with the P macro
   void printP(const prog_uchar *str);
 
-  // output raw data stored in RAM
-  void write(const char *data, int length);
-
   // output raw data stored in program memory
-  void writeP(const prog_uchar *data, int length);
+  void writeP(const prog_uchar *data, size_t length);
 
   // output HTML for a radio button
   void radioButton(const char *name, const char *val,
@@ -180,8 +195,15 @@ public:
   // refresh the page without getting a "resubmit form" dialog.
   void httpSeeOther(const char *otherURL);
 
+  // implementation of write used to implement Print interface
+  virtual void write(uint8_t);
+  virtual void write(const char *str);
+  virtual void write(const uint8_t *buffer, size_t size);
+  void write(const char *data, size_t length);
+
 private:
-  Client *m_client;
+  Server m_server;
+  Client m_client;
   const char *m_urlPrefix;
 
   char m_pushback[32];
@@ -213,9 +235,13 @@ private:
   void noRobots(ConnectionType type);
 };
 
+/********************************************************************
+ * IMPLEMENTATION
+ ********************************************************************/
+
 WebServer::WebServer(const char *urlPrefix, int port) :
-Server(port),
-  m_client(0),
+  m_server(port),
+  m_client(255),
   m_urlPrefix(urlPrefix),
   m_pushbackDepth(0),
   m_cmdCount(0),
@@ -227,7 +253,7 @@ Server(port),
 
 void WebServer::begin()
 {
-  Server::begin();
+  m_server.begin();
 }
 
 void WebServer::setDefaultCommand(Command *cmd)
@@ -249,36 +275,72 @@ void WebServer::addCommand(const char *verb, Command *cmd)
   }
 }
 
-void WebServer::writeP(const prog_uchar *data, int length)
+void WebServer::write(uint8_t ch)
 {
-  char ch;
-  while (length--)
-  {
-    ch = pgm_read_byte(data++);
-    print(ch, BYTE);
-  }
+  m_client.write(ch);
 }
 
-void WebServer::write(const char *data, int length)
+void WebServer::write(const char *str)
 {
-  char ch;
+  m_client.write(str);
+}
+
+void WebServer::write(const uint8_t *buffer, size_t size)
+{
+  m_client.write(buffer, size);
+}
+
+void WebServer::write(const char *buffer, size_t length)
+{
+  m_client.write((const uint8_t *)buffer, length);
+}
+
+void WebServer::writeP(const prog_uchar *data, size_t length)
+{
+  // copy data out of program memory into local storage, write out in
+  // chunks of 32 bytes to avoid extra short TCP/IP packets
+  uint8_t buffer[32];
+  size_t bufferEnd = 0;
+
   while (length--)
   {
-    print(*(data++), BYTE);
+    if (bufferEnd == 32)
+    {
+      m_client.write(buffer, 32);
+      bufferEnd = 0;
+    }
+
+    buffer[bufferEnd++] = pgm_read_byte(data++);
   }
+
+  if (bufferEnd > 0)
+    m_client.write(buffer, bufferEnd);
 }
 
 void WebServer::printP(const prog_uchar *str)
 {
-  char ch;
-  while ((ch = pgm_read_byte(str++)))
-    print(ch, BYTE);
+  // copy data out of program memory into local storage, write out in
+  // chunks of 32 bytes to avoid extra short TCP/IP packets
+  uint8_t buffer[32];
+  size_t bufferEnd = 0;
+  
+  while (buffer[bufferEnd++] = pgm_read_byte(str++))
+  {
+    if (bufferEnd == 32)
+    {
+      m_client.write(buffer, 32);
+      bufferEnd = 0;
+    }
+  }
+
+  // write out everything left but trailing NUL
+  if (bufferEnd > 1)
+    m_client.write(buffer, bufferEnd - 1);
 }
 
 void WebServer::printCRLF()
 {
-  print('\r', BYTE);
-  print('\n', BYTE);
+  m_client.write((const uint8_t *)"\r\n", 2);
 }
 
 bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
@@ -325,18 +387,16 @@ bool WebServer::dispatchCommand(ConnectionType requestType, char *verb,
 // processConnection with a default buffer
 void WebServer::processConnection()
 {
-  char request[DEFAULT_REQUEST_LENGTH];
-  int  request_len = DEFAULT_REQUEST_LENGTH;
+  char request[WEBDUINO_DEFAULT_REQUEST_LENGTH];
+  int  request_len = WEBDUINO_DEFAULT_REQUEST_LENGTH;
   processConnection(request, &request_len);
 }
 
 void WebServer::processConnection(char *buff, int *bufflen)
 {
-  Client client = available();
+  m_client = m_server.available();
 
-  if (client) {
-    m_client = &client;
-
+  if (m_client) {
     m_readingContent = false;
     buff[0] = 0;
     ConnectionType requestType = INVALID;
@@ -372,8 +432,7 @@ void WebServer::processConnection(char *buff, int *bufflen)
 #if WEBDUINO_SERIAL_DEBUGGING > 1
     Serial.println("*** stopping connection ***");
 #endif
-    client.stop();
-    m_client = NULL;
+    m_client.stop();
   }
 }
 
@@ -381,6 +440,7 @@ void WebServer::httpFail()
 {
   P(failMsg) =
     "HTTP/1.0 400 Bad Request" CRLF
+    WEBDUINO_SERVER_HEADER
     "Content-Type: text/html" CRLF
     CRLF
     WEBDUINO_FAIL_MESSAGE;
@@ -411,6 +471,7 @@ void WebServer::httpSuccess(const char *contentType,
 {
   P(successMsg1) =
     "HTTP/1.0 200 OK" CRLF
+    WEBDUINO_SERVER_HEADER
     "Content-Type: ";
 
   printP(successMsg1);
@@ -425,6 +486,7 @@ void WebServer::httpSeeOther(const char *otherURL)
 {
   P(seeOtherMsg) =
     "HTTP/1.0 303 See Other" CRLF
+    WEBDUINO_SERVER_HEADER
     "Location: ";
 
   printP(seeOtherMsg);
@@ -435,9 +497,14 @@ void WebServer::httpSeeOther(const char *otherURL)
 
 int WebServer::read()
 {
+  if (m_client == NULL)
+    return -1;
+
   if (m_pushbackDepth == 0)
   {
-    while (m_client->connected())
+    unsigned long timeoutTime = millis() + WEBDUINO_READ_TIMEOUT_IN_MS;
+
+    while (m_client.connected())
     {
       // stop reading the socket early if we get to content-length
       // characters in the POST.  This is because some clients leave
@@ -454,7 +521,7 @@ int WebServer::read()
         --m_contentLength;
       }
 
-      int ch = m_client->read();
+      int ch = m_client.read();
 
       // if we get a character, return it, otherwise continue in while
       // loop, checking connection status
@@ -469,6 +536,20 @@ int WebServer::read()
           Serial.print((char)ch);
 #endif
         return ch;
+      }
+      else
+      {
+        unsigned long now = millis();
+        if (now > timeoutTime)
+        {
+          // connection timed out, destroy client, return EOF
+#if WEBDUINO_SERIAL_DEBUGGING
+          Serial.println("*** Connection timed out");
+#endif
+          m_client.flush();
+          m_client.stop();
+          return -1;
+        }
       }
     }
 
@@ -621,8 +702,8 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
   char ch, hex[3];
   URLPARAM_RESULT result = URLPARAM_OK;
   char *s = *tail;
-  bool keep_scanning = TRUE;
-  bool need_value = TRUE;
+  bool keep_scanning = true;
+  bool need_value = true;
 
   // clear out name and value so they'll be NUL terminated
   memset(name, 0, nameLen);
@@ -641,8 +722,8 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
       // Fall through to "stop the scan" code
     case '&':
       /* that's end of pair, go away */
-      keep_scanning = FALSE;
-      need_value = FALSE;
+      keep_scanning = false;
+      need_value = false;
       break;
     case '+':
       ch = ' ';
@@ -653,16 +734,16 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
       if ((hex[0] = *s++) == 0)
       {
         s--;        // Back up to NUL
-        keep_scanning = FALSE;
-        need_value = FALSE;
+        keep_scanning = false;
+        need_value = false;
       }
       else
       {
         if ((hex[1] = *s++) == 0)
         {
           s--;  // Back up to NUL
-          keep_scanning = FALSE;
-          need_value = FALSE;
+          keep_scanning = false;
+          need_value = false;
         }
         else
         {
@@ -673,7 +754,7 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
       break;
     case '=':
       /* that's end of name, so switch to storing in value */
-      keep_scanning = FALSE;
+      keep_scanning = false;
       break;
     }
 
@@ -690,7 +771,7 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
 
   if (need_value && (*s != 0))
   {
-    keep_scanning = TRUE;
+    keep_scanning = true;
     while (keep_scanning)
     {
       ch = *s++;
@@ -701,8 +782,8 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
               // Fall through to "stop the scan" code
       case '&':
         /* that's end of pair, go away */
-        keep_scanning = FALSE;
-        need_value = FALSE;
+        keep_scanning = false;
+        need_value = false;
         break;
       case '+':
         ch = ' ';
@@ -712,16 +793,16 @@ URLPARAM_RESULT WebServer::nextURLparam(char **tail, char *name, int nameLen,
         if ((hex[0] = *s++) == 0)
         {
           s--;  // Back up to NUL
-          keep_scanning = FALSE;
-          need_value = FALSE;
+          keep_scanning = false;
+          need_value = false;
         }
         else
         {
           if ((hex[1] = *s++) == 0)
           {
             s--;  // Back up to NUL
-            keep_scanning = FALSE;
-            need_value = FALSE;
+            keep_scanning = false;
+            need_value = false;
           }
           else
           {
@@ -871,3 +952,5 @@ void WebServer::radioButton(const char *name, const char *val,
 {
   outputCheckboxOrRadio("radio", name, val, label, selected);
 }
+
+#endif // WEBDUINO_H_
