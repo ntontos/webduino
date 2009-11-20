@@ -38,11 +38,11 @@ void buzzCmd(WebServer &server, WebServer::ConnectionType type, char *, bool)
     char name[16], value[16];
     do
     {
-      /* readURLParam returns false when there are no more parameters
+      /* readPOSTparam returns false when there are no more parameters
        * to read from the input.  We pass in buffers for it to store
        * the name and value strings along with the length of those
        * buffers. */
-      repeat = server.readURLParam(name, 16, value, 16);
+      repeat = server.readPOSTparam(name, 16, value, 16);
 
       /* this is a standard string comparison function.  It returns 0
        * when there's an exact match.  We're looking for a parameter
