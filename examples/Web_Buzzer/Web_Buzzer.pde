@@ -43,7 +43,7 @@ void buzzCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, 
     char name[16], value[16];
     do
     {
-      /* nextURLparam returns false when there are no more parameters
+      /* readPOSTparam returns false when there are no more parameters
        * to read from the input.  We pass in buffers for it to store
        * the name and value strings along with the length of those
        * buffers. */

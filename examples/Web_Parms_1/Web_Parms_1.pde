@@ -24,7 +24,7 @@
  * http://host/parsed.html
  *
  * This invokes parsedCmd,  which displays the "raw" parameter string,
- * but also uses the "nextURLparam" routine to parse out the individual
+ * but also uses the "readPOSTparam" routine to parse out the individual
  * parameters,  and display them.
  */
 
@@ -188,7 +188,7 @@ void parsedCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail
     server.printP(Parsed_tail_begin);
     while (strlen(url_tail))
       {
-      rc = server.nextURLparam(&url_tail, name, NAMELEN, value, VALUELEN);
+      rc = server.readPOSTparam(&url_tail, name, NAMELEN, value, VALUELEN);
       if (rc == URLPARAM_EOS)
         server.printP(Params_end);
        else
