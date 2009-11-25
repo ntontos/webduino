@@ -13,11 +13,11 @@ static uint8_t mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
  * the 192.168.0.XXX or 192.168.1.XXX subrange.  Pick an address
  * that's not in use and isn't going to be automatically allocated by
  * DHCP from your router. */
-static uint8_t ip[] = { 192, 168, 1, 64 };
+static uint8_t ip[] = { 192, 168, 139, 69 };
 
 /* This creates an instance of the webserver.  By specifying a prefix
  * of "/", all pages will be at the root of the server. */
-#define PREFIX "/"
+#define PREFIX ""
 WebServer webserver(PREFIX, 80);
 
 /* commands are functions that get called by the webserver framework
