@@ -1,13 +1,14 @@
 /* Web_Buzzer.pde - example sketch for Webduino library */
 
+#include "SPI.h"
 #include "Ethernet.h"
 #include "WebServer.h"
 
 // CHANGE THIS TO YOUR OWN UNIQUE VALUE
-static uint8_t mac[6] = { 0x02, 0xAA, 0xBB, 0xCC, 0x00, 0x22 };
+static uint8_t mac[6] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xE0 };
 
 // CHANGE THIS TO MATCH YOUR HOST NETWORK
-static uint8_t ip[4] = { 192, 168, 1, 64 }; // area 51!
+static uint8_t ip[4] = { 10, 100, 69, 41 }; // area 51!
 
 /* all URLs on this server will start with /buzz because of how we
  * define the PREFIX value.  We also will listen on port 80, the
@@ -72,11 +73,8 @@ void buzzCmd(WebServer &server, WebServer::ConnectionType type, char *, bool)
     P(message) = 
 "<!DOCTYPE html><html><head>"
   "<title>Webduino AJAX Buzzer Example</title>"
-  "<link href='http://jqueryui.com/latest/themes/base/ui.all.css' rel=stylesheet />"
-  //"<meta http-equiv='Content-Script-Type' content='text/javascript'>"
-  "<script src='http://jqueryui.com/latest/jquery-1.3.2.js'></script>"
-  "<script src='http://jqueryui.com/latest/ui/ui.core.js'></script>"
-  "<script src='http://jqueryui.com/latest/ui/ui.slider.js'></script>"
+  "<script src='http://ajax.googleapis.com/ajax/libs/jquery/1.4.2/jquery.min.js'></script>"
+  "<script src='http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.5/jquery-ui.min.js'></script>"
   "<style> #slider { margin: 10px; } </style>"
   "<script>"
     "function changeBuzz(event, ui) { $('#indicator').text(ui.value); $.post('/buzz', { buzz: ui.value } ); }"
